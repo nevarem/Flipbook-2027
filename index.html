@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2027 хөрөнгө оруулалт Flipbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm civic booklet; the viewer steps back, the print speaks
+   IDEA: a printed A4 booklet lying open on a green desk, paper that bends like paper
+   PICTURE: the book itself, drawn in WebGL: pages curl around a soft cylinder with light, sheen and cast shadow
+   COLOUR and TYPE: the map's green as ground, navy ink, white paper; Montserrat + Inter, as in the PDF
+   LAYOUT: slim title bar, book centred in the stage, control bar with page thumbnails below */
+:root{color-scheme:light dark;
+  --bg:light-dark(#d3eadc,#0f221c);--bg2:light-dark(#b4dcc4,#08150f);
+  --ink:light-dark(#1b2232,#e3f1e9);--muted:light-dark(#45574f,#9fbbae);
+  --bar:light-dark(rgba(255,255,255,.6),rgba(255,255,255,.06));
+  --line:light-dark(rgba(27,34,50,.14),rgba(255,255,255,.12));
+  --acc:light-dark(#1f7a4b,#98d2af)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 45%,var(--bg) 40%,var(--bg2));
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh}
+button{font:inherit;color:inherit}
+.top{display:flex;align-items:center;gap:16px;padding:12px max(3vw,14px);border-bottom:1px solid var(--line);background:var(--bar);backdrop-filter:blur(8px)}
+.ttl{flex:1}
+.ttl p{margin:0;font-size:13px;color:var(--muted)}
+.ttl h1{margin:0;font:700 clamp(16px,2.1vw,21px)/1.15 Montserrat,Inter,sans-serif;text-wrap:balance}
+.tools,.ctrl{display:flex;align-items:center;gap:6px}
+.ib{width:44px;height:44px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:var(--bar);cursor:pointer;transition:background .15s}
+.ib:hover{background:light-dark(#fff,rgba(255,255,255,.14))}
+.ib:disabled{opacity:.35;cursor:default}
+.ib svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ib[aria-pressed=false] .on,.ib[aria-pressed=true] .off{display:none}
+:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.stage{position:relative}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+#gl.hand{cursor:grab}#gl.grabbing{cursor:grabbing}
+.fallback{position:absolute;inset:0;display:flex;gap:16px;padding:16px;overflow-x:auto;scroll-snap-type:x mandatory}
+.fallback img{height:100%;width:auto;flex:none;scroll-snap-align:center;background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.ctrl{justify-content:center;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--bar);backdrop-filter:blur(8px)}
+.thumbs{position:relative;display:flex;align-items:center;gap:8px;padding:3px 2px;overflow-x:auto;scrollbar-width:none;max-width:min(560px,calc(100vw - 210px))}
+.thumbs::-webkit-scrollbar{display:none}
+.tsep{flex:none;width:1px;height:44px;margin:0 3px;background:var(--line)}
+.th{flex:none;width:40px;height:56px;padding:0;border:2px solid transparent;border-radius:5px;overflow:hidden;background:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.18);opacity:.7;transition:opacity .15s,border-color .15s}
+.th img{display:block;width:100%;height:100%;object-fit:cover}
+.th.on{border-color:var(--acc);opacity:1}
+#count{min-width:64px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.zoom{position:fixed;inset:0;z-index:50;display:grid;grid-template-rows:auto minmax(0,1fr);background:light-dark(#dcece2,#08140f)}
+.zbar{display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.zbar span{margin-inline-end:auto;font-weight:600}
+#zlabel{min-width:56px;text-align:center;margin:0;font-variant-numeric:tabular-nums}
+.zscroll{overflow:auto;padding:16px;overscroll-behavior:contain}
+.zstack{margin:0 auto;display:grid;gap:16px}
+.zstack img{width:100%;height:auto;display:block;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.zchip{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--line);border-radius:14px;background:light-dark(rgba(255,255,255,.88),rgba(16,34,27,.9));backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.zchip .ib{width:40px;height:40px;border-radius:10px;border-color:transparent}
+.zpct{min-width:64px;height:40px;padding:0 8px;border:0;border-radius:10px;background:transparent;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
+.zpct:hover{background:light-dark(#fff,rgba(255,255,255,.12))}
+#gl.zoomed{cursor:grab}#gl.zoomed.grabbing{cursor:grabbing}
+body.nolib .ctrl,body.nolib .zchip{display:none}
+@media(max-width:600px){.ttl p{font-size:12px}.ttl .sfx{display:none}.top{gap:8px;padding-block:8px}.tools{gap:4px}.thumbs{gap:6px}.th{width:34px;height:48px}.ctrl{gap:6px}}
+@media(prefers-reduced-motion:reduce){.ib,.th{transition:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5M11 8.5v5M8.5 11h5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-snd" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="ttl">
+    <p><span id="aimag">Архангай аймаг</span><span class="sfx"> · Улсын төсвийн хөрөнгө оруулалт</span></p>
+    <h1>2027 онд манай аймагт юу хийгдэх вэ?</h1>
+  </div>
+  <div class="tools">
+    <button class="ib" id="bZoom" aria-label="Томруулж унших" title="Томруулж унших"><svg><use href="#i-zoom"/></svg></button>
+    <button class="ib" id="bSnd" aria-pressed="true" aria-label="Хуудас эргэх дуу" title="Хуудас эргэх дуу"><svg class="on"><use href="#i-snd"/></svg><svg class="off"><use href="#i-mute"/></svg></button>
+    <button class="ib" id="bFull" aria-label="Бүтэн дэлгэц" title="Бүтэн дэлгэц"><svg><use href="#i-full"/></svg></button>
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <canvas id="gl" role="img" aria-label="Flipbook, 1-р хуудас"></canvas>
+  <div class="fallback" id="fallback" hidden>
+    <img src="pages/p1.webp" loading="lazy" alt="1-р хуудас. Архангай аймаг: 2027 онд манай аймагт юу хийгдэх вэ? Төслийн тоо, салбар тус бүрийн төсөв, хэзээ дуусах вэ">
+    <img src="pages/p2.webp" loading="lazy" alt="2-р хуудас. Архангай аймаг: Таны суманд юу хийгдэх вэ? Сумдын газрын зураг ба сум тус бүрийн төсөв">
+    <img src="pages/p3.webp" loading="lazy" alt="3-р хуудас. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Батцэнгэл, Өгийнуур, Булган, Өлзийт, Жаргалант, Өндөр-Улаан, Ихтамир)">
+    <img src="pages/p4.webp" loading="lazy" alt="4-р хуудас. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Тариат, Цахир, Цэнхэр, Төвшрүүлэх, Цэцэрлэг, Хайрхан, Чулуут, Хашаат, Хотонт)">
+    <img src="pages/p5.webp" loading="lazy" alt="5-р хуудас. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Эрдэнэбулган, олон сумд хамарсан төслүүд)">
+    <img src="pages/p6.webp" loading="lazy" alt="6-р хуудас. Өвөрхангай аймаг: 2027 онд манай аймагт юу хийгдэх вэ? Төслийн тоо, салбар тус бүрийн төсөв, хэзээ дуусах вэ">
+    <img src="pages/p7.webp" loading="lazy" alt="7-р хуудас. Өвөрхангай аймаг: Таны суманд юу хийгдэх вэ? Сумдын газрын зураг ба сум тус бүрийн төсөв">
+    <img src="pages/p8.webp" loading="lazy" alt="8-р хуудас. Өвөрхангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Арвайхээр, Гучин-Ус, Нарийнтээл, Баруунбаян-Улаан зэрэг)">
+    <img src="pages/p9.webp" loading="lazy" alt="9-р хуудас. Өвөрхангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Хужирт, Хархорин, Өлзийт, Төгрөг, Уянга, Хайрхандулаан зэрэг)">
+  </div>
+  <div class="zchip" id="zchip" hidden role="group" aria-label="Томруулалт">
+    <button class="ib" id="bzOut" aria-label="Жижигрүүлэх"><svg><use href="#i-minus"/></svg></button>
+    <button class="zpct" id="bzReset" aria-label="Анхны хэмжээнд буцаах" title="Анхны хэмжээ">100%</button>
+    <button class="ib" id="bzIn" aria-label="Томруулах"><svg><use href="#i-plus"/></svg></button>
+  </div>
+</main>
+
+<nav class="ctrl" aria-label="Хуудас удирдах">
+  <button class="ib" id="bPrev" aria-label="Өмнөх хуудас"><svg><use href="#i-prev"/></svg></button>
+  <div class="thumbs" id="thumbs">
+    <button class="th" data-p="0" aria-label="Архангай, 1-р хуудас" title="Архангай · 1"><img src="pages/t1.webp" alt=""></button>
+    <button class="th" data-p="1" aria-label="Архангай, 2-р хуудас" title="Архангай · 2"><img src="pages/t2.webp" alt=""></button>
+    <button class="th" data-p="2" aria-label="Архангай, 3-р хуудас" title="Архангай · 3"><img src="pages/t3.webp" alt=""></button>
+    <button class="th" data-p="3" aria-label="Архангай, 4-р хуудас" title="Архангай · 4"><img src="pages/t4.webp" alt=""></button>
+    <button class="th" data-p="4" aria-label="Архангай, 5-р хуудас" title="Архангай · 5"><img src="pages/t5.webp" alt=""></button>
+    <span class="tsep" aria-hidden="true"></span>
+    <button class="th" data-p="5" aria-label="Өвөрхангай, 6-р хуудас" title="Өвөрхангай · 6"><img src="pages/t6.webp" alt=""></button>
+    <button class="th" data-p="6" aria-label="Өвөрхангай, 7-р хуудас" title="Өвөрхангай · 7"><img src="pages/t7.webp" alt=""></button>
+    <button class="th" data-p="7" aria-label="Өвөрхангай, 8-р хуудас" title="Өвөрхангай · 8"><img src="pages/t8.webp" alt=""></button>
+    <button class="th" data-p="8" aria-label="Өвөрхангай, 9-р хуудас" title="Өвөрхангай · 9"><img src="pages/t9.webp" alt=""></button>
+  </div>
+  <span id="count" aria-live="polite">1 / 9</span>
+  <button class="ib" id="bNext" aria-label="Дараагийн хуудас"><svg><use href="#i-next"/></svg></button>
+</nav>
+
+<div class="zoom" id="zoom" hidden role="dialog" aria-modal="true" aria-label="Томруулж унших">
+  <div class="zbar">
+    <span>Томруулж унших</span>
+    <button class="ib" id="zOut" aria-label="Жижигрүүлэх"><svg><use href="#i-minus"/></svg></button>
+    <p id="zlabel">100%</p>
+    <button class="ib" id="zIn" aria-label="Томруулах"><svg><use href="#i-plus"/></svg></button>
+    <button class="ib" id="zFit" aria-label="Өргөнд тааруулах"><svg><use href="#i-fit"/></svg></button>
+    <button class="ib" id="zClose" aria-label="Хаах"><svg><use href="#i-close"/></svg></button>
+  </div>
+  <div class="zscroll" id="zscroll">
+    <div class="zstack" id="zstack">
+      <img src="pages/p1.webp" width="1985" height="2807" loading="lazy" alt="1-р хуудас, томруулсан. Архангай аймаг: 2027 онд манай аймагт юу хийгдэх вэ? Төслийн тоо, салбар тус бүрийн төсөв, хэзээ дуусах вэ">
+      <img src="pages/p2.webp" width="1985" height="2807" loading="lazy" alt="2-р хуудас, томруулсан. Архангай аймаг: Таны суманд юу хийгдэх вэ? Сумдын газрын зураг ба сум тус бүрийн төсөв">
+      <img src="pages/p3.webp" width="1985" height="2807" loading="lazy" alt="3-р хуудас, томруулсан. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Батцэнгэл, Өгийнуур, Булган, Өлзийт, Жаргалант, Өндөр-Улаан, Ихтамир)">
+      <img src="pages/p4.webp" width="1985" height="2807" loading="lazy" alt="4-р хуудас, томруулсан. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Тариат, Цахир, Цэнхэр, Төвшрүүлэх, Цэцэрлэг, Хайрхан, Чулуут, Хашаат, Хотонт)">
+      <img src="pages/p5.webp" width="1985" height="2807" loading="lazy" alt="5-р хуудас, томруулсан. Архангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Эрдэнэбулган, олон сумд хамарсан төслүүд)">
+      <img src="pages/p6.webp" width="1985" height="2807" loading="lazy" alt="6-р хуудас, томруулсан. Өвөрхангай аймаг: 2027 онд манай аймагт юу хийгдэх вэ? Төслийн тоо, салбар тус бүрийн төсөв, хэзээ дуусах вэ">
+      <img src="pages/p7.webp" width="1985" height="2807" loading="lazy" alt="7-р хуудас, томруулсан. Өвөрхангай аймаг: Таны суманд юу хийгдэх вэ? Сумдын газрын зураг ба сум тус бүрийн төсөв">
+      <img src="pages/p8.webp" width="1985" height="2807" loading="lazy" alt="8-р хуудас, томруулсан. Өвөрхангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Арвайхээр, Гучин-Ус, Нарийнтээл, Баруунбаян-Улаан зэрэг)">
+      <img src="pages/p9.webp" width="1985" height="2807" loading="lazy" alt="9-р хуудас, томруулсан. Өвөрхангай аймаг: Сум тус бүрт хэрэгжих төслүүд (Хужирт, Хархорин, Өлзийт, Төгрөг, Уянга, Хайрхандулаан зэрэг)">
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+{
+/* ---------- Book setup ---------- */
+const PAGES = Array.from({ length: 9 }, (_, i) => 'pages/p' + (i + 1) + '.webp');
+const SECTIONS = [{ from: 0, name: 'Архангай аймаг' }, { from: 5, name: 'Өвөрхангай аймаг' }];
+const N = PAGES.length, H = 2807 / 1985, HH = H / 2, PI = Math.PI;
+const R0 = 0.17;                       // curl radius at the start of a turn (in page widths)
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = id => document.getElementById(id);
+const stage = $('stage'), canvas = $('gl'), thumbs = [...document.querySelectorAll('.th')];
+
+/* Page geometry in "book units": page width = 1, spine at x = 0, y centred.
+   Every sheet is modelled lying on the right (x 0..1). Turning it bends the part beyond a fold line
+   around a cylinder of radius r; past half the cylinder it lies flat again, upside down. */
+const VERT = `
+uniform vec2 uN; uniform float uD, uR, uZ;
+varying vec2 vUv; varying vec3 vNrm, vB; varying float vS, vLift;
+void main(){
+  vec2 p = position.xy;
+  float s = dot(p, uN) - uD;
+  vec3 pos = vec3(p, 0.0), nrm = vec3(0.0, 0.0, 1.0);
+  if (s > 0.0) {
+    float hc = 3.14159265 * uR;
+    vec2 base = p - s * uN;
+    if (s < hc) {
+      float th = s / uR;
+      pos.xy = base + uN * (uR * sin(th));
+      pos.z = uR * (1.0 - cos(th));
+      nrm = vec3(-uN * sin(th), cos(th));
+    } else {
+      float t = s - hc, top = 2.0 * uR, zmin = min(0.006, top);
+      pos.xy = base - uN * t;
+      pos.z = zmin + (top - zmin) * exp(-(t * t) / 0.09);         /* the flap droops back onto the page, like paper */
+      nrm = vec3(0.0, 0.0, -1.0);
+    }
+  }
+  vLift = pos.z; vS = s; vNrm = nrm; vUv = uv; vB = pos;
+  pos.z += uZ;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+}`;
+/* Shadow of the folded-over flap at point q (height z). Light comes from the spine side, L = (-0.45, 0.12, 1):
+   walk from q toward the light up to the flap's height and ask whether the flap is there. The flap droops,
+   so where it nearly touches the page the shadow is tight and dark; where it is high, it is wide and pale. */
+const FLAP_SHADE = `
+float flapZ(float t){ float top = 2.0 * tR, zmin = min(0.006, top); return zmin + (top - zmin) * exp(-(t * t) / 0.09); }
+float flapShade(vec2 q, float z){
+  const vec2 LD = vec2(-0.45, 0.12);
+  float h = 2.0 * tR, s = 0.0;
+  vec2 qs = q;
+  for (int i = 0; i < 3; i++) {                                  /* the occluder's height depends on where it is */
+    qs = q + max(h - z, 0.0) * LD;
+    s = dot(qs, tN) - tD;
+    if (s >= 0.0) break;
+    h = flapZ(-s);
+  }
+  float lift = max(h - z, 0.0), soft = 0.008 + 0.5 * lift, fade = 1.0 - 0.45 * smoothstep(0.0, 0.25, lift);
+  if (s >= 0.0) {                                                /* the ray meets the curl: is there paper there? */
+    vec2 p = qs - s * tN + tR * asin(min(s, tR) / max(tR, 1e-4)) * tN;
+    return fade * (1.0 - smoothstep(0.0, tR + 0.01, s)) * (1.0 - smoothstep(0.0, soft, rectOut(p)));
+  }
+  vec2 pp = qs + (3.14159265 * tR - 2.0 * s) * tN;               /* unfold: which sheet point lies above */
+  return fade * (1.0 - smoothstep(0.0, soft, rectOut(pp)));
+}`;
+const FRAG = `
+uniform sampler2D uFront, uBack; uniform float uHasBack, uSelf, uH;
+uniform vec2 tN; uniform float tD, tR, tStr;
+varying vec2 vUv; varying vec3 vNrm, vB; varying float vS, vLift;
+float rectOut(vec2 p){ vec2 q = abs(p - vec2(0.5, 0.0)) - vec2(0.5, 0.5 * uH); return length(max(q, 0.0)); }
+${FLAP_SHADE}
+void main(){
+  vec3 n = normalize(vNrm), col;
+  if (gl_FrontFacing) col = texture2D(uFront, vUv).rgb;
+  else {
+    n = -n;
+    vec3 paper = vec3(0.985, 0.985, 0.975);
+    col = uHasBack > 0.5 ? texture2D(uBack, vec2(1.0 - vUv.x, vUv.y)).rgb
+                         : mix(paper, texture2D(uFront, vUv).rgb, 0.07);   /* faint show-through */
+  }
+  vec3 L = normalize(vec3(-0.45, 0.12, 1.0));
+  float light = 0.42 + 0.58 * clamp(dot(n, L) / L.z, 0.0, 1.0);    /* flat paper = 1.0, never black, never brighter */
+  vec3 Hv = normalize(L + vec3(0.0, 0.0, 1.0));
+  float spec = max(pow(max(dot(n, Hv), 0.0), 28.0) - pow(Hv.z, 28.0), 0.0);   /* sheen on the curl only */
+  float flatness = 1.0 - smoothstep(0.0, 0.004, vLift), ax = abs(vB.x);
+  float gutter = 1.0 - flatness * (0.2 * exp(-ax / 0.022) + 0.07 * exp(-ax / 0.12));
+  float sh = 0.0;
+  bool self = uSelf > 0.5;
+  if (tStr > 0.0 && !(self && vS > 0.0)) {                     /* shadow cast by the turning sheet; the curl itself stays bright */
+    float s = dot(vB.xy, tN) - tD;
+    if (!self && s > 0.0)                                       /* soft dark under the curl on the revealed page */
+      sh = 0.42 * exp(-s / (0.03 + 1.1 * tR)) * (1.0 - smoothstep(0.0, 0.04, rectOut(vB.xy - s * tN)));
+    else {
+      sh = 0.3 * flapShade(vB.xy, vLift);
+      if (self) sh *= smoothstep(0.0, 0.7 * tR + 0.015, -s);   /* fade out toward the crease: no seam where the curl begins */
+    }
+    sh *= tStr;
+  }
+  float ink = dot(col, vec3(0.299, 0.587, 0.114));          /* matte paper: a faint sheen that leaves the ink readable */
+  gl_FragColor = vec4(min(col * light * gutter * (1.0 - sh) + spec * 0.14 * (0.25 + 0.75 * ink), 1.0), 1.0);
+}`;
+const SHADOW_VERT = `
+uniform float uH; varying vec2 vP;
+void main(){
+  vP = position.xy * vec2(3.2, uH + 1.2);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(vP, -0.004, 1.0);
+}`;
+/* shadow on the desk: the resting pages, plus the moving flap while it is over the desk */
+const SHADOW_FRAG = `
+uniform vec4 uRect, uRect2; uniform float uW2, uBlur, uA, uH;
+uniform vec2 tN; uniform float tD, tR, tStr;
+varying vec2 vP;
+float box(vec4 R, vec2 p){ vec2 q = max(vec2(R.x, R.z) - p, p - vec2(R.y, R.w)); return length(max(q, 0.0)); }
+float rectOut(vec2 p){ vec2 q = abs(p - vec2(0.5, 0.0)) - vec2(0.5, 0.5 * uH); return length(max(q, 0.0)); }
+${FLAP_SHADE}
+void main(){
+  vec2 q = vP + vec2(-0.02, 0.012);                              /* book's drop shadow, away from the light */
+  float a = 0.0;
+  if (uRect.y > uRect.x) a = 1.0 - smoothstep(0.0, uBlur, box(uRect, q));
+  if (uW2 > 0.0) a = max(a, uW2 * (1.0 - smoothstep(0.0, uBlur, box(uRect2, q))));
+  if (tStr > 0.0) {
+    float s = dot(vP, tN) - tD;
+    float f = s <= 0.0 ? flapShade(vP, 0.0)
+            : exp(-s / (0.03 + 1.1 * tR)) * (1.0 - smoothstep(0.0, 0.04, rectOut(vP - s * tN)));
+    a = max(a, 0.9 * tStr * f);
+  }
+  gl_FragColor = vec4(0.02, 0.1, 0.06, uA * a * a);
+}`;
+
+let renderer;
+try { if (!window.THREE) throw 0; renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); }
+catch (e) { renderer = null; }
+
+if (!renderer) {
+  document.body.classList.add('nolib'); canvas.hidden = true; $('fallback').hidden = false;
+} else {
+renderer.setClearColor(0x000000, 0);
+const scene = new THREE.Scene(), book = new THREE.Group();
+scene.add(book);
+const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 60);
+const aniso = renderer.capabilities.getMaxAnisotropy();
+
+/* textures: fetched as blobs so WebGL never sees a cross-origin image */
+const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat);
+white.needsUpdate = true;
+const tex = PAGES.map(() => null), urls = PAGES.map(() => null), pending = new Set();
+let keepLo = 0, keepHi = 3;
+function useTex() { for (const s of sheets) { s.m.uniforms.uFront.value = tex[s.front] || white; if (s.back >= 0) s.m.uniforms.uBack.value = tex[s.back] || white; } kick(); }
+function pageUrl(i) {
+  if (!urls[i]) urls[i] = fetch(PAGES[i]).then(r => { if (!r.ok) throw 0; return r.blob(); }).then(b => URL.createObjectURL(b)).catch(() => PAGES[i]);
+  return urls[i];
+}
+function loadTex(i) {
+  if (tex[i] || pending.has(i)) return;
+  pending.add(i);
+  pageUrl(i).then(u => {
+    const img = new Image();
+    img.onload = () => {
+      pending.delete(i);
+      if (i < keepLo || i > keepHi || tex[i]) return;
+      const t = new THREE.Texture(img); t.anisotropy = aniso; t.needsUpdate = true; tex[i] = t; useTex();
+    };
+    img.onerror = () => pending.delete(i);
+    img.src = u;
+  });
+}
+function ensureTex() {   /* the open pages first, then the ones a turn would reveal */
+  const v = mode === 'land' ? [2 * k - 1, 2 * k] : [k];
+  const lo = Math.max(0, Math.min(...v) - 3), hi = Math.min(N - 1, Math.max(...v) + 3);
+  keepLo = lo; keepHi = hi;
+  for (let i = 0; i < N; i++) if (tex[i] && (i < lo || i > hi) && !(turn && sheets[turn.j] && (sheets[turn.j].front === i || sheets[turn.j].back === i))) { tex[i].dispose(); tex[i] = null; }
+  v.filter(i => i >= 0 && i < N).forEach(loadTex);
+  for (let i = lo; i <= hi; i++) loadTex(i);
+  useTex();
+}
+setTimeout(() => PAGES.forEach((_, i) => pageUrl(i)), 1500);   /* small files: fetch all early so jumps are quick */
+
+/* uniforms shared by every page: where the turning sheet is, for cast shadows */
+const shared = { tN: { value: new THREE.Vector2(1, 0) }, tD: { value: 100 }, tR: { value: 0.1 }, tStr: { value: 0 }, uH: { value: H } };
+const geo = new THREE.PlaneGeometry(1, H, 160, 226); geo.translate(0.5, 0, 0);   /* fine grid: a tight curl stays smooth */
+
+const shadowMat = new THREE.ShaderMaterial({ vertexShader: SHADOW_VERT, fragmentShader: SHADOW_FRAG, transparent: true, depthWrite: false,
+  uniforms: Object.assign({ uRect: { value: new THREE.Vector4(0, 1, -HH, HH) }, uRect2: { value: new THREE.Vector4(0, 0, -HH, HH) },
+    uW2: { value: 0 }, uBlur: { value: 0.11 }, uA: { value: 0.3 } }, shared) });
+const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
+shadowMesh.renderOrder = -1; shadowMesh.frustumCulled = false; book.add(shadowMesh);
+
+let mode = 'land', sheets = [], k = 0, turn = null;
+const count = () => sheets.length;
+const turnable = j => j >= 0 && j < count() && (mode === 'port' ? j < N - 1 : sheets[j].back >= 0);
+const kMax = () => { let m = 0; while (turnable(m)) m++; return m; };
+
+function build() {
+  for (const s of sheets) { book.remove(s.mesh); s.m.dispose(); }
+  sheets = [];
+  const total = mode === 'land' ? Math.ceil(N / 2) : N;
+  for (let j = 0; j < total; j++) {
+    const front = mode === 'land' ? 2 * j : j, back = mode === 'land' && 2 * j + 1 < N ? 2 * j + 1 : -1;
+    const m = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
+      uniforms: Object.assign({ uN: { value: new THREE.Vector2(1, 0) }, uD: { value: 100 }, uR: { value: 0.1 }, uZ: { value: 0 },
+        uFront: { value: white }, uBack: { value: white }, uHasBack: { value: back >= 0 ? 1 : 0 }, uSelf: { value: 0 } }, shared) });
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.frustumCulled = false;
+    book.add(mesh);
+    sheets.push({ mesh, m, front, back });
+  }
+  useTex();
+}
+
+/* ---------- Fold maths ---------- */
+const progress = P => Math.min(1, Math.max(0, (1 - P.x) / 2));
+/* curl radius: shrinks as the page completes its turn, and stays small for a small lift of the corner */
+const radius = (p, L) => Math.max(1e-4, Math.min(R0 * Math.pow(1 - p, 0.5), 0.02 + 0.45 * L));
+function fold(C, P) {
+  const dx = C.x - P.x, dy = C.y - P.y, L = Math.hypot(dx, dy);
+  const r = radius(progress(P), L);
+  if (L < 1e-4) return { nx: 1, ny: 0, d: 100, r };
+  const nx = dx / L, ny = dy / L;
+  let d = C.x * nx + C.y * ny - (L + PI * r) / 2;      // corner lands under the pointer
+  d = Math.max(d, Math.abs(HH * ny));                   // ...but the spine never lifts
+  return { nx, ny, d, r };
+}
+function constrain(C, P) {
+  let x = P.x, y = C.y < 0 ? Math.max(P.y, C.y) : Math.min(P.y, C.y);
+  let dx = x, dy = y - C.y, l = Math.hypot(dx, dy);      // corner stays within one page width of its spine end
+  if (l > 1) { x = dx / l; y = C.y + dy / l; }
+  const D = Math.hypot(1, H); dx = x; dy = y + C.y; l = Math.hypot(dx, dy);
+  if (l > D) { x = dx / l * D; y = -C.y + dy / l * D; }
+  return { x, y };
+}
+const ss = t => t * t * (3 - 2 * t);
+function sideExt(kk) {   // which sides of the open book hold pages when kk sheets are turned
+  if (mode === 'port') return { L: false, R: true, off: -0.5 };
+  const L = kk > 0, R = kk < count();
+  return { L, R, off: L && R ? 0 : R ? -0.5 : 0.5 };
+}
+
+/* ---------- Per-frame uniforms ---------- */
+function apply() {
+  const tj = turn ? turn.j : -1;
+  let p = 0;
+  if (turn) {
+    p = progress(turn.P);
+    const f = fold(turn.C, turn.P);
+    shared.tN.value.set(f.nx, f.ny); shared.tD.value = f.d; shared.tR.value = f.r;
+    shared.tStr.value = Math.min(1, p * 14) * (1 - ss(Math.max(0, (p - 0.8) / 0.2)));
+  } else shared.tStr.value = 0;
+  const S = count();
+  sheets.forEach((s, j) => {
+    const u = s.m.uniforms;
+    let f, z, left;
+    if (j === tj) { f = fold(turn.C, turn.P); z = (S + 2) * 1e-3; left = false; }
+    else {
+      left = j < (turn ? tj : k);
+      f = left ? { nx: 1, ny: 0, d: 0, r: 1e-4 } : { nx: 1, ny: 0, d: 100, r: 0.1 };
+      z = (left ? j : S - j) * 1e-3;
+    }
+    u.uN.value.set(f.nx, f.ny); u.uD.value = f.d; u.uR.value = f.r; u.uZ.value = z; u.uSelf.value = j === tj ? 1 : 0;
+    const top = j === tj || (left ? j === (turn ? tj : k) - 1 : j === (turn ? tj : k) + (turn ? 1 : 0));   /* only the top page of each stack shows */
+    s.mesh.visible = top && !(mode === 'port' && left);
+  });
+  const a = turn ? sideExt(tj) : sideExt(k), b = turn ? sideExt(tj + 1) : a;
+  book.position.x = a.off + (b.off - a.off) * ss(p);
+  /* desk shadow: sides that hold a page before and after the turn, plus the side that appears or empties */
+  const su = shadowMat.uniforms, cl = v => Math.min(1, Math.max(0, v));
+  const sl = a.L && b.L, sr = a.R && b.R;
+  su.uRect.value.set(sl ? -1 : 0, sr ? 1 : (sl ? 0 : -1), -HH, HH);
+  su.uW2.value = 0;
+  for (const [side, x0, x1] of [['L', -1, 0], ['R', 0, 1]]) if (a[side] !== b[side]) {
+    su.uRect2.value.set(x0, x1, -HH, HH);
+    su.uW2.value = b[side] ? ss(cl((p - 0.65) / 0.35)) : 1 - ss(cl(p / 0.35));
+  }
+}
+
+/* ---------- Render loop (only while something moves) ---------- */
+let raf = 0, last = 0;
+function kick() { if (!raf) raf = requestAnimationFrame(frame); }
+function frame(now) {
+  raf = 0;
+  const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016); last = now;
+  let busy = false;
+  if (turn) {
+    if (turn.kind === 'anim') {
+      const A = turn.anim, e0 = Math.min(1, (now - A.t0) / A.dur), e = A.ease(e0);
+      turn.P = constrain(turn.C, { x: A.P0.x + (A.T.x - A.P0.x) * e, y: A.P0.y + (A.T.y - A.P0.y) * e + A.lift * Math.sin(PI * e) });
+      if (e0 >= 1) finish(); else busy = true;
+    } else {
+      const g = 1 - Math.exp(-dt * (turn.kind === 'drag' ? 28 : 12));
+      turn.P = { x: turn.P.x + (turn.T.x - turn.P.x) * g, y: turn.P.y + (turn.T.y - turn.P.y) * g };
+      if (turn.kind === 'peek' && turn.leaving && Math.hypot(turn.P.x - turn.T.x, turn.P.y - turn.T.y) < 2e-3) turn = null;
+      else busy = true;
+    }
+  }
+  if (stepZoom(dt)) busy = true;
+  apply();
+  renderer.render(scene, camera);
+  if (busy) kick(); else last = 0;
+}
+
+/* ---------- Turning ---------- */
+const easeIO = t => t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+const easeOut = t => 1 - (1 - t) ** 3;
+function animate(T, opts = {}) {
+  const P0 = turn.P, dist = Math.abs(T.x - P0.x) / 2;
+  turn.kind = 'anim';
+  turn.anim = { P0, T, t0: performance.now(), ease: opts.ease || easeIO,
+    dur: (opts.dur || (260 + 640 * dist)) * (reduce ? 0.4 : 1), lift: (opts.lift || 0) * dist * (turn.C.y < 0 ? 1 : -1) };
+  if (T.x < 0 !== (turn.dir < 0)) rustle();
+  kick();
+}
+function finish() {
+  const done = turn.anim.T.x < 0;
+  k = done ? turn.j + 1 : turn.j;
+  turn = null; sync();
+}
+function snap() { if (turn && turn.kind === 'anim') { turn.P = turn.anim.T; finish(); } else if (turn) turn = null; }
+function startTurn(dir, cy, P) {
+  const j = dir > 0 ? k : k - 1;
+  if (dir > 0 ? !turnable(k) : k <= 0) return false;
+  const C = { x: 1, y: cy };
+  turn = { j, dir, C, P: P || (dir > 0 ? { ...C } : { x: -1, y: cy }), T: null, kind: 'drag' };
+  return true;
+}
+function next() { unzoom(); snap(); if (startTurn(1, -HH)) { ensureTex(); animate({ x: -1, y: -HH }, { lift: 0.16 * H }); } }
+function prev() { unzoom(); snap(); if (startTurn(-1, -HH)) { ensureTex(); animate({ x: 1, y: -HH }, { lift: 0.16 * H }); } }
+function goPage(pg) {
+  snap();
+  const kt = Math.min(kMax(), mode === 'land' ? Math.ceil(pg / 2) : pg);
+  if (kt > k) { k = kt - 1; next(); } else if (kt < k) { k = kt + 1; prev(); }
+}
+
+/* ---------- Pointer ---------- */
+const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit = new THREE.Vector3();
+function bookPt(e) {
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera({ x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }, camera);
+  ray.ray.intersectPlane(plane, hit);
+  return { x: hit.x - book.position.x, y: hit.y };
+}
+const onPage = b => Math.abs(b.y) <= HH && (mode === 'port' ? b.x >= 0 && b.x <= 1 : (b.x >= 0 ? b.x <= 1 && k < count() : b.x >= -1 && k > 0));
+let drag = null;
+
+/* ---------- Zoom & pan on the book: wheel, pinch, keys ---------- */
+const ZMAX = 4;
+const view = { z: 1, zt: 1, px: 0, py: 0, ax: 0, ay: 0, wx: 0, wy: 0, base: 5, ex: 1, ey: 1 };
+const zoomed = () => view.zt > 1.01 || view.z > 1.01;
+function ndc(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * 2 - 1, y: -(e.clientY - r.top) / r.height * 2 + 1 }; }
+function clampPan() {   // keep the pages in view; the book recentres as you zoom out
+  const e = sideExt(turn ? turn.j : k), m = 0.04;
+  const xl = book.position.x + (e.L ? -1 : 0) - m, xr = book.position.x + (e.R ? 1 : 0) + m, yb = -HH - m, yt = HH + m;
+  const hx = view.ex / view.z, hy = view.ey / view.z;
+  view.px = 2 * hx >= xr - xl ? (xl + xr) / 2 : Math.min(xr - hx, Math.max(xl + hx, view.px));
+  view.py = 2 * hy >= yt - yb ? 0 : Math.min(yt - hy, Math.max(yb + hy, view.py));
+}
+function applyCam() {
+  clampPan();
+  camera.position.set(view.px, view.py, view.base);
+  camera.lookAt(view.px, view.py, 0);
+  camera.zoom = view.z;
+  camera.updateProjectionMatrix();
+}
+function zoomUI() {
+  const on = zoomed();
+  $('zchip').hidden = !on;
+  $('bzReset').textContent = Math.round(view.zt * 100) + '%';
+  $('bzIn').disabled = view.zt >= ZMAX - 1e-3;
+  canvas.classList.toggle('zoomed', on);
+}
+function zoomTo(zt, a) {   // a: screen point (ndc) that stays put while zooming
+  a = a || { x: 0, y: 0 };
+  view.wx = view.px + a.x * view.ex / view.z; view.wy = view.py + a.y * view.ey / view.z;
+  view.ax = a.x; view.ay = a.y;
+  view.zt = Math.min(ZMAX, Math.max(1, zt));
+  if (view.zt > 1.01 && turn && turn.kind === 'peek') turn = null;
+  zoomUI(); kick();
+}
+function stepZoom(dt) {
+  if (Math.abs(view.zt - view.z) < 1e-3) { if (view.z !== view.zt) { view.z = view.zt; applyCam(); zoomUI(); } return false; }
+  view.z += (view.zt - view.z) * (reduce ? 1 : 1 - Math.exp(-dt * 16));
+  view.px = view.wx - view.ax * view.ex / view.z; view.py = view.wy - view.ay * view.ey / view.z;
+  applyCam();
+  return true;
+}
+function unzoom() { if (view.zt !== 1) zoomTo(1); }
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (drag) return;
+  const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+  const f = Math.min(2, Math.max(0.5, Math.exp(-dy * (e.ctrlKey ? 0.012 : 0.0022))));
+  zoomTo(view.zt * f, ndc(e));
+}, { passive: false });
+
+const ptrs = new Map();
+let pinch = null, pan = null;
+function pinchInfo() {
+  const [a, b] = [...ptrs.values()];
+  return { d: Math.hypot(a.x - b.x, a.y - b.y), m: ndc({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 }) };
+}
+canvas.addEventListener('pointerdown', e => {
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  if (ptrs.size === 2) {                       /* second finger: pinch, and let go of any page turn */
+    if (drag && turn && turn.kind !== 'anim') animate(turn.dir > 0 ? { ...turn.C } : { x: -1, y: turn.C.y }, { ease: easeOut, dur: 220 });
+    drag = null; pan = null; canvas.classList.remove('grabbing');
+    const p = pinchInfo();
+    view.z = view.zt;
+    pinch = { d0: Math.max(1, p.d), z0: view.z, wx: view.px + p.m.x * view.ex / view.z, wy: view.py + p.m.y * view.ey / view.z };
+    return;
+  }
+  if (ptrs.size > 2 || pinch) return;
+  if (zoomed()) {                              /* zoomed in: dragging moves the view */
+    if (turn && turn.kind === 'peek') turn = null;
+    pan = { id: e.pointerId, x0: e.clientX, y0: e.clientY, px0: view.px, py0: view.py };
+    canvas.classList.add('grabbing');
+    return;
+  }
+  wakeAudio();
+  if (turn && turn.kind === 'anim') return;
+  const b = bookPt(e);
+  if (!onPage(b)) return;
+  const dir = mode === 'port' ? (b.x < 0.3 ? -1 : 1) : (b.x < 0 ? -1 : 1);
+  const keepP = turn && turn.kind === 'peek' && turn.dir === dir ? turn.P : null;
+  turn = null;
+  if (!startTurn(dir, b.y < 0 ? -HH : HH, keepP)) return;
+  turn.T = { ...turn.P };
+  const span = dir > 0 ? Math.max(0.3, b.x - (mode === 'port' ? 0 : -1)) : Math.max(0.3, 1 - b.x);
+  drag = { id: e.pointerId, b0: b, P0: { ...turn.P }, sx: 2 / span, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: false, hist: [] };
+  canvas.setPointerCapture(e.pointerId);
+  canvas.classList.add('grabbing');
+});
+canvas.addEventListener('pointermove', e => {
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && ptrs.size >= 2) {
+    const p = pinchInfo();
+    view.z = view.zt = Math.min(ZMAX, Math.max(1, pinch.z0 * p.d / pinch.d0));
+    view.px = pinch.wx - p.m.x * view.ex / view.z; view.py = pinch.wy - p.m.y * view.ey / view.z;
+    applyCam(); zoomUI(); kick();
+    return;
+  }
+  if (pan && e.pointerId === pan.id) {
+    const r = canvas.getBoundingClientRect();
+    view.px = pan.px0 - (e.clientX - pan.x0) * 2 * view.ex / view.z / r.width;
+    view.py = pan.py0 + (e.clientY - pan.y0) * 2 * view.ey / view.z / r.height;
+    view.zt = view.z; applyCam(); kick();
+    return;
+  }
+  const b = bookPt(e);
+  if (drag && e.pointerId === drag.id && turn) {
+    if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
+    if (drag.moved) {
+      turn.T = constrain(turn.C, { x: drag.P0.x + (b.x - drag.b0.x) * drag.sx, y: drag.P0.y + (b.y - drag.b0.y) });
+      drag.hist.push({ t: performance.now(), x: turn.T.x }); if (drag.hist.length > 6) drag.hist.shift();
+      kick();
+    }
+    return;
+  }
+  canvas.classList.toggle('hand', onPage(b));
+  if (e.pointerType !== 'mouse' || reduce || zoomed() || (turn && turn.kind !== 'peek')) return;
+  /* hover near a corner: lift it a little, like a real page */
+  let want = null;
+  const corners = [];
+  if (turnable(k)) corners.push({ dir: 1, x: 1 });
+  if (k > 0 && mode === 'land') corners.push({ dir: -1, x: -1 });
+  for (const c of corners) for (const cy of [-HH, HH])
+    if (Math.hypot(b.x - c.x, b.y - cy) < 0.2) want = { dir: c.dir, cy };
+  if (want) {
+    if (!turn || turn.dir !== want.dir || turn.C.y !== want.cy) { turn = null; startTurn(want.dir, want.cy); turn.kind = 'peek'; }
+    turn.leaving = false;
+    const inY = want.cy < 0 ? 0.07 : -0.07;
+    turn.T = want.dir > 0 ? { x: 0.87, y: want.cy + inY } : { x: -0.87, y: want.cy + inY };
+    kick();
+  } else if (turn && turn.kind === 'peek' && !turn.leaving) {
+    turn.leaving = true; turn.T = turn.dir > 0 ? { ...turn.C } : { x: -1, y: turn.C.y }; kick();
+  }
+});
+function release(e) {
+  ptrs.delete(e.pointerId);
+  if (pinch) {
+    if (ptrs.size < 2) { pinch = null; if (view.zt < 1.05) zoomTo(1); }
+    return;
+  }
+  if (pan && e.pointerId === pan.id) { pan = null; canvas.classList.remove('grabbing'); return; }
+  if (!drag || e.pointerId !== drag.id) return;
+  canvas.classList.remove('grabbing');
+  const d = drag; drag = null;
+  if (!turn) return;
+  let toLeft;
+  if (!d.moved) toLeft = turn.dir > 0;                         // a tap turns the page
+  else {
+    const h = d.hist, v = h.length > 1 ? (h[h.length - 1].x - h[0].x) / Math.max(1, h[h.length - 1].t - h[0].t) * 1000 : 0;
+    toLeft = Math.abs(v) > 1.2 ? v < 0 : turn.P.x < 0;          // a flick wins over position
+  }
+  const T = toLeft ? { x: -1, y: turn.C.y } : { ...turn.C };
+  if (!d.moved) animate(T, { lift: 0.16 * H });
+  else animate(T, { ease: easeOut, dur: 160 + 420 * Math.abs(T.x - turn.P.x) / 2 });
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', e => {
+  if (e.pointerType === 'mouse' && turn && turn.kind === 'peek') { turn.leaving = true; turn.T = turn.dir > 0 ? { ...turn.C } : { x: -1, y: turn.C.y }; kick(); }
+});
+
+/* ---------- Layout ---------- */
+function visible() { return mode === 'land' ? [2 * k - 1, 2 * k].filter(p => p >= 0 && p < N) : [k]; }
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setSize(w, h, false);
+  const pad = w < 600 ? 0.94 : 0.9;
+  const want = Math.min(w * pad, h * pad / H) > 1.3 * Math.min(w * pad / 2, h * pad / H) ? 'port' : 'land';
+  if (want !== mode) {
+    const first = visible()[0]; snap(); turn = null; mode = want; build(); k = Math.min(kMax(), mode === 'land' ? Math.ceil(first / 2) : first);
+    view.z = view.zt = 1; view.px = view.py = 0; zoomUI(); sync();
+  }
+  const cw = (mode === 'land' ? 2 : 1) / pad, ch = H / pad, tf = Math.tan(camera.fov * PI / 360);
+  camera.aspect = w / h;
+  view.base = Math.max(ch / 2 / tf, cw / 2 / tf / camera.aspect);
+  view.ey = tf * view.base; view.ex = view.ey * camera.aspect;
+  applyCam();
+  kick();
+}
+
+/* ---------- UI ---------- */
+function sync() {
+  const v = visible();
+  $('count').textContent = v.map(p => p + 1).join('–') + ' / ' + N;
+  thumbs.forEach((t, i) => { const on = v.includes(i); t.classList.toggle('on', on); t.setAttribute('aria-current', on ? 'page' : 'false'); });
+  $('aimag').textContent = SECTIONS.filter(x => x.from <= v[v.length - 1]).pop().name;
+  const strip = $('thumbs'), a = thumbs[v[0]], b = thumbs[v[v.length - 1]];
+  const mid = (a.offsetLeft + b.offsetLeft + b.offsetWidth) / 2;
+  if (strip.scrollWidth > strip.clientWidth) strip.scrollTo({ left: mid - strip.clientWidth / 2, behavior: reduce ? 'auto' : 'smooth' });
+  ensureTex();
+  $('bPrev').disabled = k === 0;
+  $('bNext').disabled = !turnable(k);
+  canvas.setAttribute('aria-label', 'Flipbook, ' + v.map(p => p + 1).join('–') + '-р хуудас');
+  try { history.replaceState(null, '', '#page-' + (v[0] + 1)); } catch (e) {}
+  kick();
+}
+$('bPrev').addEventListener('click', prev);
+$('bNext').addEventListener('click', next);
+thumbs.forEach(t => t.addEventListener('click', () => { wakeAudio(); const p = +t.dataset.p; if (!visible().includes(p)) goPage(p); }));
+$('bzIn').addEventListener('click', () => zoomTo(view.zt * 1.5));
+$('bzOut').addEventListener('click', () => zoomTo(view.zt / 1.5));
+$('bzReset').addEventListener('click', () => zoomTo(1));
+document.addEventListener('keydown', e => {
+  if (!$('zoom').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); wakeAudio(); next(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); wakeAudio(); prev(); }
+  else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomTo(view.zt * 1.5); }
+  else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomTo(view.zt / 1.5); }
+  else if (e.key === '0' || e.key === 'Escape') { if (zoomed()) { e.preventDefault(); zoomTo(1); } }
+});
+window.openAt = () => visible()[0];
+
+build();
+const startPage = Math.min(N - 1, Math.max(0, (parseInt((location.hash.match(/^#page-(\d+)$/) || [])[1], 10) || 1) - 1));
+resize();
+k = Math.min(kMax(), mode === 'land' ? Math.ceil(startPage / 2) : startPage);
+sync();
+new ResizeObserver(resize).observe(stage);
+}
+
+/* ---------- Sound: a paper rustle made with Web Audio ---------- */
+var actx = null, sound = true;
+function wakeAudio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; } }
+  if (actx.state === 'suspended') actx.resume().catch(() => {});
+}
+function rustle() {
+  if (!sound || !actx || actx.state !== 'running') return;
+  const d = 0.45, n = Math.floor(actx.sampleRate * d), buf = actx.createBuffer(1, n, actx.sampleRate), ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) { const t = i / n; ch[i] = (Math.random() * 2 - 1) * Math.min(1, t * 8) * (1 - t) ** 2 * (0.6 + 0.4 * Math.sin(t * 40)); }
+  const src = actx.createBufferSource(), f = actx.createBiquadFilter(), g = actx.createGain();
+  src.buffer = buf; f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 0.6; g.gain.value = 0.22;
+  src.connect(f).connect(g).connect(actx.destination); src.start();
+}
+try { sound = localStorage.getItem('flip-sound') !== 'off'; } catch (e) {}
+$('bSnd').setAttribute('aria-pressed', String(sound));
+$('bSnd').addEventListener('click', () => {
+  wakeAudio(); sound = !sound; $('bSnd').setAttribute('aria-pressed', String(sound));
+  try { localStorage.setItem('flip-sound', sound ? 'on' : 'off'); } catch (e) {}
+});
+document.addEventListener('pointerdown', wakeAudio, { passive: true });
+
+/* ---------- Fullscreen ---------- */
+if (!(document.fullscreenEnabled || document.webkitFullscreenEnabled)) $('bFull').hidden = true;
+$('bFull').addEventListener('click', () => {
+  try {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen().catch(() => { $('bFull').hidden = true; });
+  } catch (e) { $('bFull').hidden = true; }
+});
+
+/* ---------- Zoom reader: all pages stacked, 50–300% ---------- */
+const zoom = $('zoom'), zs = $('zscroll'), zst = $('zstack');
+let z = 1;
+const zbase = () => Math.min(zs.clientWidth - 32, 960);
+function applyZoom(keep) {
+  const cx = (zs.scrollLeft + zs.clientWidth / 2) / zs.scrollWidth, cy = (zs.scrollTop + zs.clientHeight / 2) / zs.scrollHeight;
+  zst.style.width = Math.round(zbase() * z) + 'px';
+  $('zlabel').textContent = Math.round(z * 100) + '%';
+  $('zOut').disabled = z <= 0.5; $('zIn').disabled = z >= 3;
+  if (keep) { zs.scrollLeft = cx * zs.scrollWidth - zs.clientWidth / 2; zs.scrollTop = cy * zs.scrollHeight - zs.clientHeight / 2; }
+}
+const setZoom = nz => { z = Math.min(3, Math.max(0.5, Math.round(nz * 4) / 4)); applyZoom(true); };
+$('bZoom').addEventListener('click', () => {
+  zoom.hidden = false; z = 1; applyZoom(false);
+  const img = zst.children[window.openAt ? window.openAt() : 0];
+  zs.scrollTop = img.offsetTop - 16; zs.scrollLeft = 0;
+  $('zClose').focus();
+});
+const closeZoom = () => { zoom.hidden = true; $('bZoom').focus(); };
+$('zClose').addEventListener('click', closeZoom);
+$('zIn').addEventListener('click', () => setZoom(z + 0.25));
+$('zOut').addEventListener('click', () => setZoom(z - 0.25));
+$('zFit').addEventListener('click', () => setZoom(1));
+zs.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); setZoom(z - Math.sign(e.deltaY) * 0.25); } }, { passive: false });
+document.addEventListener('keydown', e => {
+  if (zoom.hidden) return;
+  if (e.key === 'Escape') closeZoom();
+  else if (e.key === '+' || e.key === '=') setZoom(z + 0.25);
+  else if (e.key === '-') setZoom(z - 0.25);
+});
+window.addEventListener('resize', () => { if (!zoom.hidden) applyZoom(true); });
+}
+</script>
+</body>
+</html>
